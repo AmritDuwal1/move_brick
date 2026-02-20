@@ -36,14 +36,26 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   static const double _brickDrawWidth = brickWidth - 4;
   static const double _brickDrawHeight = brickHeight - 2;
   static const int maxLives = 3;
-  // Brick types: 0 = empty, 1 = normal, 2 = magic fire, 3 = magic paddle, 4 = magic multi-ball
+  // Brick types: 0=empty, 1=normal, 2=fire, 3=paddleWide, 4=multiBall, 5=ballSlow, 6=extraLife, 7=explode, 8=coinRain, 9=surprise
   static const int _brickNormal = 1;
   static const int _brickMagicFire = 2;
   static const int _brickMagicPaddle = 3;
   static const int _brickMagicMultiBall = 4;
+  static const int _brickMagicBallSlow = 5;
+  static const int _brickMagicExtraLife = 6;
+  static const int _brickMagicExplode = 7;
+  static const int _brickMagicCoinRain = 8;
+  static const int _brickSurprise = 9;
+  static const int _firstMagic = 2;
+  static const int _lastMagic = 9;
+
   static const Duration _powerUpDuration = Duration(seconds: 12);
   static const Duration _widePaddleDuration = Duration(seconds: 10);
+  static const Duration _ballSpeedDuration = Duration(seconds: 10);
+  static const Duration _badEffectDuration = Duration(seconds: 6);
+  static const Duration _screenShakeDuration = Duration(milliseconds: 800);
   static const double _widePaddleMultiplier = 1.6;
+  static const double _shrinkPaddleMultiplier = 0.6;
   static const double _projectileSpeed = 0.025;
   static const double _projectileWidth = 6;
   static const double _projectileHeight = 16;
@@ -65,23 +77,40 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   List<List<int>> _bricks = [];
   double _gameWidth = 400;
   double _gameHeight = 600;
-  // Power-ups (separate timers)
   DateTime? _firePowerUpEndTime;
   DateTime? _widePaddleEndTime;
+  DateTime? _shrinkPaddleEndTime;
   DateTime? _multiBallPowerUpEndTime;
+  DateTime? _ballSlowEndTime;
+  DateTime? _ballFastEndTime;
+  DateTime? _reversePaddleEndTime;
+  DateTime? _screenShakeEndTime;
+  double _ballSpeedMultiplier = 1.0;
   final List<_ExtraBall> _extraBalls = [];
   final List<_Projectile> _projectiles = [];
   int _frameCount = 0;
+  final math.Random _random = math.Random();
 
   double get _currentPaddleWidth {
-    final wide = _widePaddleEndTime != null && DateTime.now().isBefore(_widePaddleEndTime!);
-    return paddleWidth * (wide ? _widePaddleMultiplier : 1.0);
+    final now = DateTime.now();
+    if (_widePaddleEndTime != null && now.isBefore(_widePaddleEndTime!)) return paddleWidth * _widePaddleMultiplier;
+    if (_shrinkPaddleEndTime != null && now.isBefore(_shrinkPaddleEndTime!)) return paddleWidth * _shrinkPaddleMultiplier;
+    return paddleWidth;
   }
 
+  bool get _paddleReversed => _reversePaddleEndTime != null && DateTime.now().isBefore(_reversePaddleEndTime!);
   bool get _hasFirePowerUp => _firePowerUpEndTime != null && DateTime.now().isBefore(_firePowerUpEndTime!);
   bool get _hasWidePaddle => _widePaddleEndTime != null && DateTime.now().isBefore(_widePaddleEndTime!);
   bool get _hasMultiBallPowerUp => _multiBallPowerUpEndTime != null && DateTime.now().isBefore(_multiBallPowerUpEndTime!);
-  bool get _hasAnyPowerUp => _hasFirePowerUp || _hasWidePaddle || _hasMultiBallPowerUp;
+  bool get _hasAnyPowerUp =>
+      _hasFirePowerUp ||
+      _hasWidePaddle ||
+      _shrinkPaddleEndTime != null && DateTime.now().isBefore(_shrinkPaddleEndTime!) ||
+      _hasMultiBallPowerUp ||
+      _ballSlowEndTime != null && DateTime.now().isBefore(_ballSlowEndTime!) ||
+      _ballFastEndTime != null && DateTime.now().isBefore(_ballFastEndTime!) ||
+      _paddleReversed ||
+      _screenShakeEndTime != null && DateTime.now().isBefore(_screenShakeEndTime!);
 
   @override
   void initState() {
@@ -93,30 +122,35 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   void _initBricks() {
     _bricks = List.generate(brickRows, (_) => List.filled(brickCols, _brickNormal));
-    // Place one of each magic type; positions change every level for fresh UI
-    final l = _level - 1;
-    final positions = [
-      [1, 2], [2, 4], [0, 3], [3, 1], [2, 6], [4, 2], [1, 5], [0, 1], [3, 5], [4, 0],
-    ];
-    final firePos = positions[(l + 0) % positions.length];
-    final paddlePos = positions[(l + 3) % positions.length];
-    final multiPos = positions[(l + 6) % positions.length];
-    void place(int r, int c, int type) {
-      if (r >= 0 && r < brickRows && c >= 0 && c < brickCols) _bricks[r][c] = type;
+    if (_level == 1) return; // Level 1: plain, no magic
+
+    // All possible positions for magic bricks
+    final positions = <List<int>>[];
+    for (var r = 0; r < brickRows; r++) for (var c = 0; c < brickCols; c++) positions.add([r, c]);
+    positions.shuffle(_random);
+
+    var idx = 0;
+    void place(int type) {
+      if (idx >= positions.length) return;
+      final p = positions[idx++];
+      _bricks[p[0]][p[1]] = type;
     }
-    place(firePos[0], firePos[1], _brickMagicFire);
-    place(paddlePos[0], paddlePos[1], _brickMagicPaddle);
-    place(multiPos[0], multiPos[1], _brickMagicMultiBall);
+
+    // Level 2+: (level-1) good magic types from pool [fire, paddle, ballSlow, multiBall, explode, coinRain]
+    final goodPool = [_brickMagicFire, _brickMagicPaddle, _brickMagicBallSlow, _brickMagicMultiBall, _brickMagicExplode, _brickMagicCoinRain];
+    final count = math.min(_level - 1, goodPool.length);
+    for (var i = 0; i < count; i++) place(goodPool[i]);
+
+    // Level 2+: one dedicated life box (heart)
+    place(_brickMagicExtraLife);
+
+    // Level 3+: one surprise box (rainbow ?, random good/bad)
+    if (_level >= 3) place(_brickSurprise);
   }
 
-  void _activateFirePowerUp() {
-    _firePowerUpEndTime = DateTime.now().add(_powerUpDuration);
-  }
-
-  void _activateWidePaddlePowerUp() {
-    _widePaddleEndTime = DateTime.now().add(_widePaddleDuration);
-  }
-
+  void _activateFirePowerUp() => _firePowerUpEndTime = DateTime.now().add(_powerUpDuration);
+  void _activateWidePaddlePowerUp() => _widePaddleEndTime = DateTime.now().add(_widePaddleDuration);
+  void _activateShrinkPaddle() => _shrinkPaddleEndTime = DateTime.now().add(_badEffectDuration);
   void _activateMultiBallPowerUp() {
     _multiBallPowerUpEndTime = DateTime.now().add(_powerUpDuration);
     for (var i = 0; i < _extraBallsCount; i++) {
@@ -125,10 +159,52 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     }
   }
 
+  void _activateBallSlow() => _ballSlowEndTime = DateTime.now().add(_ballSpeedDuration);
+  void _activateBallFast() => _ballFastEndTime = DateTime.now().add(_badEffectDuration);
+  void _activateExtraLife() => _lives = math.min(_lives + 1, maxLives + 2);
+  void _activateReversePaddle() => _reversePaddleEndTime = DateTime.now().add(_badEffectDuration);
+  void _activateScreenShake() => _screenShakeEndTime = DateTime.now().add(_screenShakeDuration);
+
+  void _explodeAt(int r, int c) {
+    for (var dr = -1; dr <= 1; dr++) {
+      for (var dc = -1; dc <= 1; dc++) {
+        final nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < brickRows && nc >= 0 && nc < brickCols && _bricks[nr][nc] != 0) {
+          _bricks[nr][nc] = 0;
+          _score += 10;
+        }
+      }
+    }
+  }
+
+  void _coinRain() {
+    for (var r = 0; r < brickRows; r++) for (var c = 0; c < brickCols; c++) if (_bricks[r][c] == _brickNormal) { _bricks[r][c] = 0; _score += 15; }
+  }
+
   void _onMagicBrickHit(int type) {
     if (type == _brickMagicFire) _activateFirePowerUp();
     else if (type == _brickMagicPaddle) _activateWidePaddlePowerUp();
     else if (type == _brickMagicMultiBall) _activateMultiBallPowerUp();
+    else if (type == _brickMagicBallSlow) _activateBallSlow();
+    else if (type == _brickMagicExtraLife) _activateExtraLife();
+    else if (type == _brickMagicExplode) {} // handled at hit site with r,c
+    else if (type == _brickMagicCoinRain) _coinRain();
+    else if (type == _brickSurprise) _applySurpriseEffect();
+  }
+
+  void _applySurpriseEffect() {
+    final effects = [
+      () => _activateFirePowerUp(),
+      () => _activateWidePaddlePowerUp(),
+      () => _activateMultiBallPowerUp(),
+      () => _activateBallSlow(),
+      () => _activateExtraLife(),
+      () => _activateReversePaddle(),
+      () => _activateShrinkPaddle(),
+      () => _activateBallFast(),
+      () => _activateScreenShake(),
+    ];
+    effects[_random.nextInt(effects.length)]();
   }
 
   void _checkBrickHit(double bx, double by, double halfW, double halfH, void Function(int r, int c) onHit) {
@@ -158,15 +234,18 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
     setState(() {
       final now = DateTime.now();
-      if (_firePowerUpEndTime != null && now.isAfter(_firePowerUpEndTime!)) {
-        _firePowerUpEndTime = null;
-        _projectiles.clear();
-      }
+      if (_firePowerUpEndTime != null && now.isAfter(_firePowerUpEndTime!)) { _firePowerUpEndTime = null; _projectiles.clear(); }
       if (_widePaddleEndTime != null && now.isAfter(_widePaddleEndTime!)) _widePaddleEndTime = null;
-      if (_multiBallPowerUpEndTime != null && now.isAfter(_multiBallPowerUpEndTime!)) {
-        _multiBallPowerUpEndTime = null;
-        _extraBalls.clear();
-      }
+      if (_shrinkPaddleEndTime != null && now.isAfter(_shrinkPaddleEndTime!)) _shrinkPaddleEndTime = null;
+      if (_multiBallPowerUpEndTime != null && now.isAfter(_multiBallPowerUpEndTime!)) { _multiBallPowerUpEndTime = null; _extraBalls.clear(); }
+      if (_ballSlowEndTime != null && now.isAfter(_ballSlowEndTime!)) _ballSlowEndTime = null;
+      if (_ballFastEndTime != null && now.isAfter(_ballFastEndTime!)) _ballFastEndTime = null;
+      if (_reversePaddleEndTime != null && now.isAfter(_reversePaddleEndTime!)) _reversePaddleEndTime = null;
+      if (_screenShakeEndTime != null && now.isAfter(_screenShakeEndTime!)) _screenShakeEndTime = null;
+
+      _ballSpeedMultiplier = 1.0;
+      if (_ballSlowEndTime != null && now.isBefore(_ballSlowEndTime!)) _ballSpeedMultiplier = 0.5;
+      if (_ballFastEndTime != null && now.isBefore(_ballFastEndTime!)) _ballSpeedMultiplier = 1.8;
 
       const double paddleBottomGap = 24;
       final paddleTop = 1 - (paddleHeight + paddleBottomGap) / _gameHeight;
@@ -177,7 +256,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       final halfW = _brickDrawWidth / 2 / _gameWidth + ballRadius / _gameWidth;
       final halfH = _brickDrawHeight / 2 / _gameHeight + ballRadius / _gameHeight;
 
-      // Auto-fire during fire power-up only
       if (_hasFirePowerUp && _frameCount % _fireIntervalFrames == 0) {
         _projectiles.add(_Projectile(_paddleX, 1 - (paddleHeight + paddleBottomGap + 10) / _gameHeight));
       }
@@ -195,7 +273,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         final projHalfH = (_projectileHeight / 2 + _brickDrawHeight / 2) / _gameHeight;
         _checkBrickHit(p.x, p.y, projHalfW, projHalfH, (r, c) {
           final t = _bricks[r][c];
-          if (t >= _brickMagicFire && t <= _brickMagicMultiBall) _onMagicBrickHit(t);
+          if (t == _brickMagicExplode) _explodeAt(r, c); else if (t >= _firstMagic && t <= _lastMagic) _onMagicBrickHit(t);
           _bricks[r][c] = 0;
           _score += 10;
           GameSounds.brickHit();
@@ -204,9 +282,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         if (hit) _projectiles.removeAt(i);
       }
 
-      // Main ball
-      _ballX += _ballDx;
-      _ballY += _ballDy;
+      // Main ball (apply speed multiplier)
+      _ballX += _ballDx * _ballSpeedMultiplier;
+      _ballY += _ballDy * _ballSpeedMultiplier;
       _bounceBall(_ballX, _ballY, _ballDx, _ballDy, (nx, ny, ndx, ndy) {
         _ballX = nx;
         _ballY = ny;
@@ -215,7 +293,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       }, paddleLeft, paddleRight, paddleTop, paddleBottom);
       _checkBrickHit(_ballX, _ballY, halfW, halfH, (r, c) {
         final t = _bricks[r][c];
-        if (t >= _brickMagicFire && t <= _brickMagicMultiBall) _onMagicBrickHit(t);
+        if (t == _brickMagicExplode) _explodeAt(r, c); else if (t >= _firstMagic && t <= _lastMagic) _onMagicBrickHit(t);
         _bricks[r][c] = 0;
         _ballDy = -_ballDy;
         _score += 10;
@@ -239,11 +317,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         return;
       }
 
-      // Extra balls
+      // Extra balls (apply speed multiplier)
       for (var i = _extraBalls.length - 1; i >= 0; i--) {
         final b = _extraBalls[i];
-        b.x += b.dx;
-        b.y += b.dy;
+        b.x += b.dx * _ballSpeedMultiplier;
+        b.y += b.dy * _ballSpeedMultiplier;
         if (b.y > 1) {
           _extraBalls.removeAt(i);
           continue;
@@ -256,7 +334,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         }, paddleLeft, paddleRight, paddleTop, paddleBottom);
         _checkBrickHit(b.x, b.y, halfW, halfH, (r, c) {
           final t = _bricks[r][c];
-          if (t >= _brickMagicFire && t <= _brickMagicMultiBall) _onMagicBrickHit(t);
+          if (t == _brickMagicExplode) _explodeAt(r, c); else if (t >= _firstMagic && t <= _lastMagic) _onMagicBrickHit(t);
           _bricks[r][c] = 0;
           b.dy = -b.dy;
           _score += 10;
@@ -312,7 +390,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       _levelComplete = false;
       _firePowerUpEndTime = null;
       _widePaddleEndTime = null;
+      _shrinkPaddleEndTime = null;
       _multiBallPowerUpEndTime = null;
+      _ballSlowEndTime = null;
+      _ballFastEndTime = null;
+      _reversePaddleEndTime = null;
+      _screenShakeEndTime = null;
+      _ballSpeedMultiplier = 1.0;
       _extraBalls.clear();
       _projectiles.clear();
     }
@@ -334,7 +418,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _levelComplete = false;
     _firePowerUpEndTime = null;
     _widePaddleEndTime = null;
+    _shrinkPaddleEndTime = null;
     _multiBallPowerUpEndTime = null;
+    _ballSlowEndTime = null;
+    _ballFastEndTime = null;
+    _reversePaddleEndTime = null;
+    _screenShakeEndTime = null;
+    _ballSpeedMultiplier = 1.0;
     _extraBalls.clear();
     _projectiles.clear();
     setState(() {});
@@ -362,15 +452,18 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             builder: (context, constraints) {
               _gameWidth = constraints.maxWidth;
               _gameHeight = constraints.maxHeight;
-              return GestureDetector(
+              final shake = _screenShakeEndTime != null && DateTime.now().isBefore(_screenShakeEndTime!);
+              final shakeOffset = shake ? Offset((( _frameCount * 7) % 7 - 3).toDouble(), ((_frameCount * 11) % 7 - 3).toDouble()) : Offset.zero;
+              return Transform.translate(
+                offset: shakeOffset,
+                child: GestureDetector(
                 onHorizontalDragUpdate: (d) {
                   final localX = d.globalPosition.dx - (context.findRenderObject() as RenderBox).localToGlobal(Offset.zero).dx;
                   final w = _currentPaddleWidth;
+                  var x = localX / _gameWidth;
+                  if (_paddleReversed) x = 1 - x;
                   setState(() {
-                    _paddleX = (localX / _gameWidth).clamp(
-                      (w / 2) / _gameWidth,
-                      1 - (w / 2) / _gameWidth,
-                    );
+                    _paddleX = x.clamp((w / 2) / _gameWidth, 1 - (w / 2) / _gameWidth);
                   });
                 },
                 child: Stack(
@@ -453,6 +546,88 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                           ],
                         );
                         magicChild = const Center(child: Text('⭐', style: TextStyle(fontSize: 18)));
+                      } else if (type == _brickMagicBallSlow) {
+                        decoration = BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF00897B), Color(0xFF26A69A), Color(0xFF4DB6AC)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.teal.withOpacity(0.6), blurRadius: 6, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = const Center(child: Text('🐢', style: TextStyle(fontSize: 16)));
+                      } else if (type == _brickMagicExtraLife) {
+                        decoration = BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFD32F2F), Color(0xFFE57373), Color(0xFFFFCDD2)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.red.withOpacity(0.6), blurRadius: 6, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = const Center(child: Text('❤️', style: TextStyle(fontSize: 18)));
+                      } else if (type == _brickMagicExplode) {
+                        decoration = BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF455A64), Color(0xFF78909C), Color(0xFF90A4AE)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.orange.withOpacity(0.8), blurRadius: 8, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = const Center(child: Text('💥', style: TextStyle(fontSize: 18)));
+                      } else if (type == _brickMagicCoinRain) {
+                        decoration = BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFFD700), Color(0xFFFFC107), Color(0xFFFFA000)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.amber.withOpacity(0.7), blurRadius: 6, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = const Center(child: Text('🪙', style: TextStyle(fontSize: 18)));
+                      } else if (type == _brickSurprise) {
+                        decoration = BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.red.withOpacity(0.9),
+                              Colors.orange.withOpacity(0.9),
+                              Colors.yellow.withOpacity(0.9),
+                              Colors.green.withOpacity(0.9),
+                              Colors.blue.withOpacity(0.9),
+                              Colors.purple.withOpacity(0.9),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.white.withOpacity(0.5), blurRadius: 8, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = Center(
+                          child: Transform.translate(
+                            offset: Offset(0, 3 * math.sin(_frameCount * 0.12)),
+                            child: const Text('❓', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                          ),
+                        );
                       } else {
                         decoration = BoxDecoration(
                           color: normalColors[r % 5],
@@ -666,6 +841,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     ),
                   ],
                 ),
+              ),
               );
             },
           ),
