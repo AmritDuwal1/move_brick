@@ -1,5 +1,6 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
+
+import '../game_sounds.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
@@ -28,8 +29,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   double _paddleX = 0.5;
   double _ballX = 0.5;
   double _ballY = 0.85;
-  double _ballDx = 0.015;
-  double _ballDy = -0.02;
+  double _ballDx = 0.006;
+  double _ballDy = -0.008;
   int _score = 0;
   int _lives = maxLives;
   int _level = 1;
@@ -87,7 +88,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           _ballX <= paddleRight + ballRadius / _gameWidth) {
         _ballDy = -_ballDy;
         final hitPos = (_ballX - paddleLeft) / (paddleRight - paddleLeft);
-        _ballDx = 0.02 * (hitPos - 0.5);
+        _ballDx = 0.008 * (hitPos - 0.5);
+        GameSounds.paddleHit();
       }
 
       // Bottom - lose life
@@ -96,12 +98,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         if (_lives <= 0) {
           _gameOver = true;
           _controller.stop();
+          GameSounds.gameOver();
           return;
         }
         _ballX = 0.5;
         _ballY = 0.85;
-        _ballDx = 0.015;
-        _ballDy = -0.02;
+        _ballDx = 0.006;
+        _ballDy = -0.008;
         _started = false;
         return;
       }
@@ -123,6 +126,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             _bricks[r][c] = false;
             _ballDy = -_ballDy;
             _score += 10;
+            GameSounds.brickHit();
           }
         }
       }
@@ -131,6 +135,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       if (allGone) {
         _levelComplete = true;
         _controller.stop();
+        GameSounds.levelComplete();
       }
     });
   }
@@ -141,8 +146,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       _initBricks();
       _ballX = 0.5;
       _ballY = 0.85;
-      _ballDx = 0.015;
-      _ballDy = -0.02;
+      _ballDx = 0.006;
+      _ballDy = -0.008;
       _levelComplete = false;
     }
     _started = true;
@@ -156,8 +161,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _initBricks();
     _ballX = 0.5;
     _ballY = 0.85;
-    _ballDx = 0.015;
-    _ballDy = -0.02;
+    _ballDx = 0.006;
+    _ballDy = -0.008;
     _started = false;
     _gameOver = false;
     _levelComplete = false;
@@ -188,6 +193,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               _gameHeight = constraints.maxHeight;
               return GestureDetector(
                 onHorizontalDragUpdate: (d) {
+                  // Move paddle from anywhere: finger position controls paddle
                   final localX = d.globalPosition.dx - (context.findRenderObject() as RenderBox).localToGlobal(Offset.zero).dx;
                   setState(() {
                     _paddleX = (localX / _gameWidth).clamp(
