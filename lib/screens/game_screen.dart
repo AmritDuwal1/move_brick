@@ -457,6 +457,18 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               return Transform.translate(
                 offset: shakeOffset,
                 child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (d) {
+                  final box = context.findRenderObject() as RenderBox?;
+                  if (box == null) return;
+                  final localX = d.globalPosition.dx - box.localToGlobal(Offset.zero).dx;
+                  final w = _currentPaddleWidth;
+                  var x = localX / _gameWidth;
+                  if (_paddleReversed) x = 1 - x;
+                  setState(() {
+                    _paddleX = x.clamp((w / 2) / _gameWidth, 1 - (w / 2) / _gameWidth);
+                  });
+                },
                 onHorizontalDragUpdate: (d) {
                   final localX = d.globalPosition.dx - (context.findRenderObject() as RenderBox).localToGlobal(Offset.zero).dx;
                   final w = _currentPaddleWidth;
@@ -480,6 +492,27 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                         color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  // Mute button (top-right) – tap here toggles sound; tap elsewhere moves paddle
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: IconButton(
+                        icon: Icon(
+                          GameSounds.isMuted ? Icons.volume_off : Icons.volume_up,
+                          color: Colors.white70,
+                          size: 28,
+                        ),
+                        onPressed: () {
+                          GameSounds.toggleMuted();
+                          setState(() {});
+                        },
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                       ),
                     ),
                   ),

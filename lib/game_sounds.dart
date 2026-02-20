@@ -10,7 +10,9 @@ class GameSounds {
   static final AudioPlayer _player = AudioPlayer();
   static bool _muted = false;
 
+  static bool get isMuted => _muted;
   static void setMuted(bool muted) => _muted = muted;
+  static void toggleMuted() => _muted = !_muted;
 
   /// Build 8-bit mono WAV bytes (8 kHz) with a short tone.
   static Uint8List _wavBytes(int numSamples, {double freqHz = 440}) {
