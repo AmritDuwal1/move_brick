@@ -36,10 +36,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   static const double _brickDrawWidth = brickWidth - 4;
   static const double _brickDrawHeight = brickHeight - 2;
   static const int maxLives = 3;
-  // Brick types: 0 = empty, 1 = normal, 2 = magic
+  // Brick types: 0 = empty, 1 = normal, 2 = magic fire, 3 = magic paddle, 4 = magic multi-ball
   static const int _brickNormal = 1;
-  static const int _brickMagic = 2;
+  static const int _brickMagicFire = 2;
+  static const int _brickMagicPaddle = 3;
+  static const int _brickMagicMultiBall = 4;
   static const Duration _powerUpDuration = Duration(seconds: 12);
+  static const Duration _widePaddleDuration = Duration(seconds: 10);
+  static const double _widePaddleMultiplier = 1.6;
   static const double _projectileSpeed = 0.025;
   static const double _projectileWidth = 6;
   static const double _projectileHeight = 16;
@@ -61,11 +65,23 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   List<List<int>> _bricks = [];
   double _gameWidth = 400;
   double _gameHeight = 600;
-  // Power-up: multi-ball + firing
-  DateTime? _powerUpEndTime;
+  // Power-ups (separate timers)
+  DateTime? _firePowerUpEndTime;
+  DateTime? _widePaddleEndTime;
+  DateTime? _multiBallPowerUpEndTime;
   final List<_ExtraBall> _extraBalls = [];
   final List<_Projectile> _projectiles = [];
   int _frameCount = 0;
+
+  double get _currentPaddleWidth {
+    final wide = _widePaddleEndTime != null && DateTime.now().isBefore(_widePaddleEndTime!);
+    return paddleWidth * (wide ? _widePaddleMultiplier : 1.0);
+  }
+
+  bool get _hasFirePowerUp => _firePowerUpEndTime != null && DateTime.now().isBefore(_firePowerUpEndTime!);
+  bool get _hasWidePaddle => _widePaddleEndTime != null && DateTime.now().isBefore(_widePaddleEndTime!);
+  bool get _hasMultiBallPowerUp => _multiBallPowerUpEndTime != null && DateTime.now().isBefore(_multiBallPowerUpEndTime!);
+  bool get _hasAnyPowerUp => _hasFirePowerUp || _hasWidePaddle || _hasMultiBallPowerUp;
 
   @override
   void initState() {
@@ -77,23 +93,42 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   void _initBricks() {
     _bricks = List.generate(brickRows, (_) => List.filled(brickCols, _brickNormal));
-    // Place one magic brick near center (row 2, col 3 or 4)
-    final magicR = 2;
-    final magicC = brickCols ~/ 2;
-    if (magicR < brickRows && magicC < brickCols) {
-      _bricks[magicR][magicC] = _brickMagic;
+    // Place one of each magic type; positions change every level for fresh UI
+    final l = _level - 1;
+    final positions = [
+      [1, 2], [2, 4], [0, 3], [3, 1], [2, 6], [4, 2], [1, 5], [0, 1], [3, 5], [4, 0],
+    ];
+    final firePos = positions[(l + 0) % positions.length];
+    final paddlePos = positions[(l + 3) % positions.length];
+    final multiPos = positions[(l + 6) % positions.length];
+    void place(int r, int c, int type) {
+      if (r >= 0 && r < brickRows && c >= 0 && c < brickCols) _bricks[r][c] = type;
     }
+    place(firePos[0], firePos[1], _brickMagicFire);
+    place(paddlePos[0], paddlePos[1], _brickMagicPaddle);
+    place(multiPos[0], multiPos[1], _brickMagicMultiBall);
   }
 
-  bool get _hasPowerUp => _powerUpEndTime != null && DateTime.now().isBefore(_powerUpEndTime!);
+  void _activateFirePowerUp() {
+    _firePowerUpEndTime = DateTime.now().add(_powerUpDuration);
+  }
 
-  void _activatePowerUp() {
-    _powerUpEndTime = DateTime.now().add(_powerUpDuration);
-    // Spawn extra balls from main ball position with spread angles
+  void _activateWidePaddlePowerUp() {
+    _widePaddleEndTime = DateTime.now().add(_widePaddleDuration);
+  }
+
+  void _activateMultiBallPowerUp() {
+    _multiBallPowerUpEndTime = DateTime.now().add(_powerUpDuration);
     for (var i = 0; i < _extraBallsCount; i++) {
       final angle = -0.5 * math.pi + (i - _extraBallsCount / 2) * 0.35;
       _extraBalls.add(_ExtraBall(_ballX, _ballY, 0.008 * math.cos(angle), 0.008 * math.sin(angle)));
     }
+  }
+
+  void _onMagicBrickHit(int type) {
+    if (type == _brickMagicFire) _activateFirePowerUp();
+    else if (type == _brickMagicPaddle) _activateWidePaddlePowerUp();
+    else if (type == _brickMagicMultiBall) _activateMultiBallPowerUp();
   }
 
   void _checkBrickHit(double bx, double by, double halfW, double halfH, void Function(int r, int c) onHit) {
@@ -122,23 +157,28 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _frameCount++;
 
     setState(() {
-      // Expire power-up
-      if (_powerUpEndTime != null && DateTime.now().isAfter(_powerUpEndTime!)) {
-        _powerUpEndTime = null;
-        _extraBalls.clear();
+      final now = DateTime.now();
+      if (_firePowerUpEndTime != null && now.isAfter(_firePowerUpEndTime!)) {
+        _firePowerUpEndTime = null;
         _projectiles.clear();
+      }
+      if (_widePaddleEndTime != null && now.isAfter(_widePaddleEndTime!)) _widePaddleEndTime = null;
+      if (_multiBallPowerUpEndTime != null && now.isAfter(_multiBallPowerUpEndTime!)) {
+        _multiBallPowerUpEndTime = null;
+        _extraBalls.clear();
       }
 
       const double paddleBottomGap = 24;
       final paddleTop = 1 - (paddleHeight + paddleBottomGap) / _gameHeight;
       final paddleBottom = paddleTop + paddleHeight / _gameHeight;
-      final paddleLeft = _paddleX - (paddleWidth / 2) / _gameWidth;
-      final paddleRight = _paddleX + (paddleWidth / 2) / _gameWidth;
+      final w = _currentPaddleWidth;
+      final paddleLeft = _paddleX - (w / 2) / _gameWidth;
+      final paddleRight = _paddleX + (w / 2) / _gameWidth;
       final halfW = _brickDrawWidth / 2 / _gameWidth + ballRadius / _gameWidth;
       final halfH = _brickDrawHeight / 2 / _gameHeight + ballRadius / _gameHeight;
 
-      // Auto-fire during power-up
-      if (_hasPowerUp && _frameCount % _fireIntervalFrames == 0) {
+      // Auto-fire during fire power-up only
+      if (_hasFirePowerUp && _frameCount % _fireIntervalFrames == 0) {
         _projectiles.add(_Projectile(_paddleX, 1 - (paddleHeight + paddleBottomGap + 10) / _gameHeight));
       }
 
@@ -154,7 +194,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         final projHalfW = (_projectileWidth / 2 + _brickDrawWidth / 2) / _gameWidth;
         final projHalfH = (_projectileHeight / 2 + _brickDrawHeight / 2) / _gameHeight;
         _checkBrickHit(p.x, p.y, projHalfW, projHalfH, (r, c) {
-          if (_bricks[r][c] == _brickMagic) _activatePowerUp();
+          final t = _bricks[r][c];
+          if (t >= _brickMagicFire && t <= _brickMagicMultiBall) _onMagicBrickHit(t);
           _bricks[r][c] = 0;
           _score += 10;
           GameSounds.brickHit();
@@ -173,7 +214,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         _ballDy = ndy;
       }, paddleLeft, paddleRight, paddleTop, paddleBottom);
       _checkBrickHit(_ballX, _ballY, halfW, halfH, (r, c) {
-        if (_bricks[r][c] == _brickMagic) _activatePowerUp();
+        final t = _bricks[r][c];
+        if (t >= _brickMagicFire && t <= _brickMagicMultiBall) _onMagicBrickHit(t);
         _bricks[r][c] = 0;
         _ballDy = -_ballDy;
         _score += 10;
@@ -213,7 +255,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           b.dy = ndy;
         }, paddleLeft, paddleRight, paddleTop, paddleBottom);
         _checkBrickHit(b.x, b.y, halfW, halfH, (r, c) {
-          if (_bricks[r][c] == _brickMagic) _activatePowerUp();
+          final t = _bricks[r][c];
+          if (t >= _brickMagicFire && t <= _brickMagicMultiBall) _onMagicBrickHit(t);
           _bricks[r][c] = 0;
           b.dy = -b.dy;
           _score += 10;
@@ -267,7 +310,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       _ballDx = 0.006;
       _ballDy = -0.008;
       _levelComplete = false;
-      _powerUpEndTime = null;
+      _firePowerUpEndTime = null;
+      _widePaddleEndTime = null;
+      _multiBallPowerUpEndTime = null;
       _extraBalls.clear();
       _projectiles.clear();
     }
@@ -287,7 +332,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _started = false;
     _gameOver = false;
     _levelComplete = false;
-    _powerUpEndTime = null;
+    _firePowerUpEndTime = null;
+    _widePaddleEndTime = null;
+    _multiBallPowerUpEndTime = null;
     _extraBalls.clear();
     _projectiles.clear();
     setState(() {});
@@ -317,12 +364,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               _gameHeight = constraints.maxHeight;
               return GestureDetector(
                 onHorizontalDragUpdate: (d) {
-                  // Move paddle from anywhere: finger position controls paddle
                   final localX = d.globalPosition.dx - (context.findRenderObject() as RenderBox).localToGlobal(Offset.zero).dx;
+                  final w = _currentPaddleWidth;
                   setState(() {
                     _paddleX = (localX / _gameWidth).clamp(
-                      (paddleWidth / 2) / _gameWidth,
-                      1 - (paddleWidth / 2) / _gameWidth,
+                      (w / 2) / _gameWidth,
+                      1 - (w / 2) / _gameWidth,
                     );
                   });
                 },
@@ -343,7 +390,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       ),
                     ),
                   ),
-                  // Bricks
+                  // Bricks (normal colors vary by level for fresh UI each level)
                   ..._bricks.asMap().entries.expand((rowEntry) {
                     final r = rowEntry.key;
                     return rowEntry.value.asMap().entries.map((colEntry) {
@@ -353,58 +400,86 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       final cellW = _gameWidth / brickCols;
                       final top = _brickTopOffset + r * _brickRowSpacing;
                       final left = _brickLeftPadding + c * cellW;
-                      final isMagic = type == _brickMagic;
+                      // Level-based color schemes for normal bricks
+                      final levelPalette = _level % 4;
+                      final normalColors = [
+                        [Colors.deepOrange, Colors.orange, Colors.amber, Colors.yellow.shade700, Colors.orange.shade300],
+                        [Colors.teal, Colors.cyan.shade700, Colors.blue.shade300, Colors.indigo.shade300, Colors.blue.shade200],
+                        [Colors.pink.shade700, Colors.pink.shade400, Colors.purple.shade300, Colors.deepPurple.shade300, Colors.purple.shade200],
+                        [Colors.green.shade800, Colors.green.shade600, Colors.lightGreen.shade400, Colors.lime.shade400, Colors.green.shade200],
+                      ][levelPalette];
+                      // Magic bricks: different UI per type
+                      BoxDecoration? decoration;
+                      Widget? magicChild;
+                      if (type == _brickMagicFire) {
+                        decoration = BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE65100), Color(0xFFFF9800), Color(0xFFFF5722)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.orange.withOpacity(0.7), blurRadius: 6, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = const Center(child: Text('🔥', style: TextStyle(fontSize: 18)));
+                      } else if (type == _brickMagicPaddle) {
+                        decoration = BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1565C0), Color(0xFF42A5F5), Color(0xFF90CAF9)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.blue.withOpacity(0.6), blurRadius: 6, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = const Center(child: Text('⇔', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)));
+                      } else if (type == _brickMagicMultiBall) {
+                        decoration = BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF7B1FA2), Color(0xFFE040FB), Color(0xFFBA68C8)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            const BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                            BoxShadow(color: Colors.purple.withOpacity(0.6), blurRadius: 6, spreadRadius: 0),
+                          ],
+                        );
+                        magicChild = const Center(child: Text('⭐', style: TextStyle(fontSize: 18)));
+                      } else {
+                        decoration = BoxDecoration(
+                          color: normalColors[r % 5],
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1, 1)),
+                          ],
+                        );
+                      }
                       return Positioned(
                         left: left,
                         top: top,
                         child: Container(
                           width: _brickDrawWidth,
                           height: _brickDrawHeight,
-                          decoration: BoxDecoration(
-                            gradient: isMagic
-                                ? const LinearGradient(
-                                    colors: [Color(0xFF9C27B0), Color(0xFFE040FB)],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  )
-                                : null,
-                            color: isMagic ? null : [
-                              Colors.deepOrange,
-                              Colors.orange,
-                              Colors.amber,
-                              Colors.yellow.shade700,
-                              Colors.orange.shade300,
-                            ][r % 5],
-                            borderRadius: BorderRadius.circular(4),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 2,
-                                offset: const Offset(1, 1),
-                              ),
-                              if (isMagic)
-                                BoxShadow(
-                                  color: Colors.purple.withOpacity(0.6),
-                                  blurRadius: 6,
-                                  spreadRadius: 0,
-                                ),
-                            ],
-                          ),
-                          child: isMagic
-                              ? const Center(
-                                  child: Text('★', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                                )
-                              : null,
+                          decoration: decoration,
+                          child: magicChild,
                         ),
                       );
                     });
                   }),
                   // Paddle
                   Positioned(
-                    left: (_paddleX * _gameWidth - paddleWidth / 2).clamp(0.0, _gameWidth - paddleWidth),
+                    left: (_paddleX * _gameWidth - _currentPaddleWidth / 2).clamp(0.0, _gameWidth - _currentPaddleWidth),
                     bottom: 24,
                     child: Container(
-                      width: paddleWidth,
+                      width: _currentPaddleWidth,
                       height: paddleHeight,
                       decoration: BoxDecoration(
                         color: const Color(0xFFE65100),
@@ -469,8 +544,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     ),
                   )),
                   // Power-up indicator
-                  if (_hasPowerUp)
-                    Positioned(
+                  if (_hasAnyPowerUp)
+                      Positioned(
                       top: 8,
                       right: 16,
                       child: Container(
