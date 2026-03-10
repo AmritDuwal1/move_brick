@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'ads/appodeal_ads.dart';
 import 'screens/game_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
+  await AppodealAds.initialize(
+    appKey: '93c9e1c0382888f75cd8022c18b116efe68a375ffe933ed7',
+    testing: false,
+    verboseLogs: false,
+  );
+  await AppodealAds.loadAndShowConsentIfRequired();
   runApp(const MovingBrickApp());
 }
 

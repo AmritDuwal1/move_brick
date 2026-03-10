@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../ads/appodeal_ads.dart';
 import '../game_sounds.dart';
 
 class _ExtraBall {
@@ -307,6 +308,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           _gameOver = true;
           _controller.stop();
           GameSounds.gameOver();
+          WidgetsBinding.instance.addPostFrameCallback((_) => AppodealAds.showInterstitial(placement: 'game_over'));
           return;
         }
         _ballX = 0.5;
@@ -347,6 +349,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         _levelComplete = true;
         _controller.stop();
         GameSounds.levelComplete();
+        WidgetsBinding.instance.addPostFrameCallback((_) => AppodealAds.showInterstitial(placement: 'level_complete'));
       }
     });
   }

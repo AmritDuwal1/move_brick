@@ -1,16 +1,56 @@
 PODS:
+  - APDIABAdapter (3.12.0.0):
+    - Appodeal (= 3.12.0)
+    - StackModules (= 3.4.1)
+  - Appodeal (3.12.0):
+    - Protobuf (= 3.29.3)
+    - StackConsentManager (= 3.0.0)
+    - StackModules (= 3.4.1)
   - audioplayers_darwin (0.0.1):
     - Flutter
     - FlutterMacOS
   - Flutter (1.0.0)
+  - GoogleUserMessagingPlatform (2.7.0)
+  - OMSDK_Appodeal (1.5.2)
   - path_provider_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
+  - Protobuf (3.29.3)
+  - stack_appodeal_flutter (3.12.0):
+    - APDIABAdapter (= 3.12.0.0)
+    - Appodeal (= 3.12.0)
+    - Flutter
+  - StackConsentManager (3.0.0):
+    - GoogleUserMessagingPlatform (~> 2.1)
+  - StackModules (3.4.1):
+    - StackModules/Static (= 3.4.1)
+  - StackModules/Core-Static (3.4.1)
+  - StackModules/ProductPresentation-Static (3.4.1):
+    - StackModules/Core-Static
+  - StackModules/Rendering-Static (3.4.1):
+    - OMSDK_Appodeal (= 1.5.2)
+    - StackModules/Core-Static
+    - StackModules/ProductPresentation-Static
+  - StackModules/Static (3.4.1):
+    - StackModules/Core-Static
+    - StackModules/ProductPresentation-Static
+    - StackModules/Rendering-Static
 
 DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
   - Flutter (from `Flutter`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
+  - stack_appodeal_flutter (from `.symlinks/plugins/stack_appodeal_flutter/ios`)
+
+SPEC REPOS:
+  trunk:
+    - APDIABAdapter
+    - Appodeal
+    - GoogleUserMessagingPlatform
+    - OMSDK_Appodeal
+    - Protobuf
+    - StackConsentManager
+    - StackModules
 
 EXTERNAL SOURCES:
   audioplayers_darwin:
@@ -19,11 +59,21 @@ EXTERNAL SOURCES:
     :path: Flutter
   path_provider_foundation:
     :path: ".symlinks/plugins/path_provider_foundation/darwin"
+  stack_appodeal_flutter:
+    :path: ".symlinks/plugins/stack_appodeal_flutter/ios"
 
 SPEC CHECKSUMS:
+  APDIABAdapter: 89f412ae566b6f6a97a6913b1f3e3801b0e13bc1
+  Appodeal: fd232509fb6221bd1999b1390ea8ede08b679ba8
   audioplayers_darwin: 4027b33a8f471d996c13f71cb77f0b1583b5d923
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  GoogleUserMessagingPlatform: a8b56893477f67212fbc8411c139e61d463349f5
+  OMSDK_Appodeal: 066f9da2c77d560e319341c6bd4739828bc65842
   path_provider_foundation: 2b6b4c569c0fb62ec74538f866245ac84301af46
+  Protobuf: e2de96d939c642ce8da186343ff8929b35223212
+  stack_appodeal_flutter: 79db86b759b6bd28f3c4652748849f3265e9137f
+  StackConsentManager: 80684e96361f88476985a2ed91a9299bc9196be8
+  StackModules: 2cdc4fe670b6536c8024c4ae24d4c2c76dc15006
 
 PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
 
