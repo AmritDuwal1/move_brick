@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../ads/appodeal_ads.dart';
+import '../coins/coin_store.dart';
 import '../game_sounds.dart';
 
 class _ExtraBall {
@@ -71,6 +72,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   double _ballDy = -0.008;
   int _score = 0;
   int _lives = maxLives;
+  int _coins = CoinStore.defaultCoins;
   int _level = 1;
   bool _started = false;
   bool _gameOver = false;
@@ -116,9 +118,52 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
+    _coins = CoinStore.coins;
     _initBricks();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 16));
     _controller.addListener(_update);
+    WidgetsBinding.instance.addPostFrameCallback((_) => AppodealAds.showBannerTop());
+  }
+
+  void _showAdMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _watchAdForCoins() async {
+    _showAdMessage('Loading ad…');
+    final shown = await AppodealAds.showRewarded(
+      placement: 'coins',
+      onRewarded: () async {
+        await CoinStore.add(CoinStore.rewardFromAd);
+        if (!mounted) return;
+        setState(() => _coins = CoinStore.coins);
+        _showAdMessage('+${CoinStore.rewardFromAd} coins!');
+      },
+      onUnavailable: () => _showAdMessage(
+        'No ad available. Use a real device, accept consent/tracking, then try again.',
+      ),
+      onShowFailed: () => _showAdMessage('Could not show ad. Try again.'),
+    );
+    if (!shown) return;
+  }
+
+  Future<void> _continueWithCoin() async {
+    final spent = await CoinStore.spend(CoinStore.continueCost);
+    if (!spent || !mounted) return;
+    setState(() {
+      _coins = CoinStore.coins;
+      _gameOver = false;
+      _lives = 1;
+      _ballX = 0.5;
+      _ballY = 0.85;
+      _ballDx = 0.006;
+      _ballDy = -0.008;
+      _started = false;
+    });
+    _controller.repeat();
   }
 
   void _initBricks() {
@@ -410,6 +455,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   void _restart() {
     _score = 0;
     _lives = maxLives;
+    _coins = CoinStore.coins;
     _level = 1;
     _initBricks();
     _ballX = 0.5;
@@ -435,6 +481,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    AppodealAds.hideBanners();
+    AppodealAds.destroyBanners();
     _controller.dispose();
     super.dispose();
   }
@@ -489,12 +537,40 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   Positioned(
                     top: 8,
                     left: 16,
+                    right: 56,
                     child: Text(
-                      'Score: $_score  |  Lives: $_lives  |  Level $_level',
+                      'Score: $_score  |  Lives: $_lives  |  Level $_level  |  🪙 $_coins',
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  // Watch ad for coins (HUD)
+                  Positioned(
+                    top: 36,
+                    right: 8,
+                    child: Material(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.circular(20),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: _watchAdForCoins,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.play_circle_outline, color: Colors.amber, size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                '+${CoinStore.rewardFromAd}',
+                                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -824,14 +900,39 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Score: $_score',
+                                'Score: $_score  |  Coins: $_coins',
                                 style: const TextStyle(color: Colors.white70, fontSize: 20),
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 20),
+                              if (_coins >= CoinStore.continueCost)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: ElevatedButton.icon(
+                                    onPressed: _continueWithCoin,
+                                    icon: const Icon(Icons.monetization_on),
+                                    label: Text('Continue (${CoinStore.continueCost} coin)'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.amber.shade800,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    ),
+                                  ),
+                                ),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: ElevatedButton.icon(
+                                  onPressed: _watchAdForCoins,
+                                  icon: const Icon(Icons.play_circle_outline),
+                                  label: Text('Watch ad (+${CoinStore.rewardFromAd} coins)'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1565C0),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  ),
+                                ),
+                              ),
                               ElevatedButton.icon(
-                                onPressed: () {
-                                  _restart();
-                                },
+                                onPressed: _restart,
                                 icon: const Icon(Icons.refresh),
                                 label: const Text('Play again'),
                                 style: ElevatedButton.styleFrom(

@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ads/appodeal_ads.dart';
+import 'coins/coin_store.dart';
 import 'screens/game_screen.dart';
 
 void main() async {
@@ -10,6 +12,7 @@ void main() async {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
+  await CoinStore.load();
   await AppodealAds.initialize(
     appKey: '93c9e1c0382888f75cd8022c18b116efe68a375ffe933ed7',
     testing: false,
